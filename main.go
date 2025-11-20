@@ -14,6 +14,7 @@ import (
 	_ "image/png"
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,11 +39,10 @@ const (
 	saltLen       = 16
 )
 
-// Account represents a stored OTP entry
 type Account struct {
 	Name   string `json:"name"`
 	Issuer string `json:"issuer"`
-	Secret string `json:"secret"` // Stored as Base32 string
+	Secret string `json:"secret"`
 }
 
 func main() {
@@ -57,9 +57,13 @@ func main() {
 		},
 		Commands: []*cli.Command{
 			{
-				Name:      "setup",
-				Usage:     "Import accounts from a Google Authenticator QR code image",
-				ArgsUsage: "<path_to_image>",
+				Name:  "setup",
+				Usage: "Import accounts from Google Authenticator QR code images",
+				Description: "Imports accounts from exported QR codes.\n" +
+					"   If you have many accounts, Google splits the export into multiple QR codes.\n" +
+					"   You must SWIPE LEFT on your phone to see them all.\n" +
+					"   Take screenshots of ALL QR codes and pass them here.",
+				ArgsUsage: "<image_path_1> [image_path_2] ...",
 				Action:    runSetup,
 			},
 		},
@@ -71,53 +75,68 @@ func main() {
 }
 
 func runSetup(c *cli.Context) error {
-	imagePath := c.Args().First()
-	if imagePath == "" {
-		return errors.New("please provide a path to the QR code image")
+	if c.NArg() == 0 {
+		return errors.New("please provide path(s) to the QR code image(s)")
 	}
 
-	fmt.Printf("Reading image: %s...\n", imagePath)
-	migrationURL, err := decodeQRCode(imagePath)
-	if err != nil {
-		return fmt.Errorf("failed to decode QR code: %w", err)
-	}
+	var totalAccounts []Account
 
-	fmt.Println("Parsing migration data...")
+	for _, imagePath := range c.Args().Slice() {
+		fmt.Printf("Processing %s...\n", imagePath)
 
-	parts := strings.Split(migrationURL, "data=")
-	if len(parts) < 2 {
-		return errors.New("invalid migration URL: missing 'data' parameter")
-	}
-	dataStr := parts[1]
-
-	dataBytes, err := base64.StdEncoding.DecodeString(dataStr)
-	if err != nil {
-		return fmt.Errorf("failed to decode base64 string: %w", err)
-	}
-
-	payload, err := migration.Unmarshal(dataBytes)
-	if err != nil {
-		return fmt.Errorf("failed to unmarshal migration payload: %w", err)
-	}
-
-	var accounts []Account
-
-	for _, p := range payload.OtpParameters {
-		secretB32 := base32.StdEncoding.EncodeToString(p.Secret)
-
-		name := p.Name
-		if p.Issuer != "" {
-			name = fmt.Sprintf("%s (%s)", p.Name, p.Issuer)
+		migrationURL, err := decodeQRCode(imagePath)
+		if err != nil {
+			return fmt.Errorf("failed to decode QR code in %s: %w", imagePath, err)
 		}
 
-		accounts = append(accounts, Account{
-			Name:   name,
-			Issuer: p.Issuer,
-			Secret: secretB32,
-		})
-	}
+		u, err := url.Parse(migrationURL)
+		if err != nil {
+			return fmt.Errorf("failed to parse URL structure in %s: %w", imagePath, err)
+		}
 
-	fmt.Printf("Found %d accounts.\n", len(accounts))
+		dataStr := u.Query().Get("data")
+		if dataStr == "" {
+			return fmt.Errorf("invalid migration URL in %s: missing 'data' parameter", imagePath)
+		}
+
+		dataStr = strings.ReplaceAll(dataStr, " ", "+")
+
+		dataBytes, err := base64.StdEncoding.DecodeString(dataStr)
+		if err != nil {
+			dataBytes, err = base64.RawStdEncoding.DecodeString(dataStr)
+			if err != nil {
+				return fmt.Errorf("failed to decode base64 data in %s: %w", imagePath, err)
+			}
+		}
+
+		payload, err := migration.Unmarshal(dataBytes)
+		if err != nil {
+			return fmt.Errorf("failed to unmarshal migration payload in %s: %w", imagePath, err)
+		}
+
+		countInThisBatch := 0
+		for _, p := range payload.OtpParameters {
+			secretB32 := base32.StdEncoding.EncodeToString(p.Secret)
+			
+			name := p.Name
+			if p.Issuer != "" {
+				name = fmt.Sprintf("%s (%s)", p.Name, p.Issuer)
+			}
+
+			totalAccounts = append(totalAccounts, Account{
+				Name:   name,
+				Issuer: p.Issuer,
+				Secret: secretB32,
+			})
+			countInThisBatch++
+		}
+		fmt.Printf("-> Found %d accounts in this file.\n", countInThisBatch)
+	}
+	
+	fmt.Printf("\nTotal extracted accounts: %d\n", len(totalAccounts))
+	if len(totalAccounts) == 0 {
+		return errors.New("no accounts found in the provided images")
+	}
 
 	fmt.Print("Enter a new master password to secure your data: ")
 	password, err := term.ReadPassword(int(os.Stdin.Fd()))
@@ -130,7 +149,7 @@ func runSetup(c *cli.Context) error {
 		return errors.New("password cannot be empty")
 	}
 
-	if err := saveAccounts(accounts, password); err != nil {
+	if err := saveAccounts(totalAccounts, password); err != nil {
 		return fmt.Errorf("failed to save data: %w", err)
 	}
 
