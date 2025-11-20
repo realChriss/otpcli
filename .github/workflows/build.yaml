@@ -1,0 +1,55 @@
+name: Build otpcli
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch: # Allows manual triggering
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }}/${{ matrix.arch }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          # Linux Build Configuration
+          - os: linux
+            arch: amd64
+            output_name: otpcli
+            asset_name: otpcli-linux-amd64
+          
+          # Windows Build Configuration
+          - os: windows
+            arch: amd64
+            output_name: otpcli.exe
+            asset_name: otpcli-windows-amd64.exe
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+        cache: true
+
+    - name: Get dependencies
+      run: go mod download
+
+    - name: Build Binary
+      env:
+        GOOS: ${{ matrix.os }}
+        GOARCH: ${{ matrix.arch }}
+        CGO_ENABLED: 0 # Static build, no C dependencies needed
+      run: |
+        go build -v -o build/${{ matrix.output_name }} main.go
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ matrix.asset_name }}
+        path: build/${{ matrix.output_name }}
+        if-no-files-found: error
