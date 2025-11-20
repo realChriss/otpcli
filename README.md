@@ -18,7 +18,7 @@ It allows you to migrate your 2FA accounts directly from **Google Authenticator*
 | OS | Architecture | Download Link |
 | :--- | :--- | :--- |
 | **Windows** | 64-bit | [Download .exe](https://github.com/realChriss/otpcli/releases/latest/download/otpcli-windows-amd64.exe.zip) |
-| **Linux** | 64-bit | [Download Binary](https://github.com/realChriss/otpcli/releases/latest/download/otpcli-linux-amd6.zip) |
+| **Linux** | 64-bit | [Download Binary](https://github.com/realChriss/otpcli/releases/latest/download/otpcli-linux-amd64.zip) |
 | **macOS** | Apple Silicon (M1/M2) | [Download Binary](https://github.com/realChriss/otpcli/releases/latest/download/otpcli-darwin-arm64.zip) |
 | **macOS** | Intel | [Download Binary](https://github.com/realChriss/otpcli/releases/latest/download/otpcli-darwin-amd64.zip) |
 
