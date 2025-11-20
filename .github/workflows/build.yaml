@@ -14,17 +14,29 @@ jobs:
     strategy:
       matrix:
         include:
-          # Linux Build Configuration
+          # Linux
           - os: linux
             arch: amd64
             output_name: otpcli
             asset_name: otpcli-linux-amd64
           
-          # Windows Build Configuration
+          # Windows
           - os: windows
             arch: amd64
             output_name: otpcli.exe
             asset_name: otpcli-windows-amd64.exe
+
+          # macOS (Intel)
+          - os: darwin
+            arch: amd64
+            output_name: otpcli
+            asset_name: otpcli-darwin-amd64
+
+          # macOS (Apple Silicon - M1/M2/M3)
+          - os: darwin
+            arch: arm64
+            output_name: otpcli
+            asset_name: otpcli-darwin-arm64
 
     steps:
     - name: Checkout code
