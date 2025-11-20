@@ -70,42 +70,31 @@ func main() {
 	}
 }
 
-// --- Commands ---
-
 func runSetup(c *cli.Context) error {
 	imagePath := c.Args().First()
 	if imagePath == "" {
 		return errors.New("please provide a path to the QR code image")
 	}
 
-	// 1. Read and Decode QR Code
 	fmt.Printf("Reading image: %s...\n", imagePath)
 	migrationURL, err := decodeQRCode(imagePath)
 	if err != nil {
 		return fmt.Errorf("failed to decode QR code: %w", err)
 	}
 
-	// 2. Parse Migration URL
 	fmt.Println("Parsing migration data...")
 
-	// Extract the 'data' query parameter
-	// The URL format is otpauth-migration://offline?data=...
-	// We simply split by "data=" to get the payload
 	parts := strings.Split(migrationURL, "data=")
 	if len(parts) < 2 {
 		return errors.New("invalid migration URL: missing 'data' parameter")
 	}
 	dataStr := parts[1]
 
-	// Decode Base64
-	// Google Auth migration data is Base64 encoded.
-	// It implies standard encoding, but we should handle potential decoding errors.
 	dataBytes, err := base64.StdEncoding.DecodeString(dataStr)
 	if err != nil {
 		return fmt.Errorf("failed to decode base64 string: %w", err)
 	}
 
-	// Unmarshal Protobuf
 	payload, err := migration.Unmarshal(dataBytes)
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal migration payload: %w", err)
@@ -113,9 +102,7 @@ func runSetup(c *cli.Context) error {
 
 	var accounts []Account
 
-	// FIX: Iterate over payload.OtpParameters
 	for _, p := range payload.OtpParameters {
-		// Google Auth proto secret is raw bytes, convert to Base32 for standard storage
 		secretB32 := base32.StdEncoding.EncodeToString(p.Secret)
 
 		name := p.Name
@@ -132,10 +119,9 @@ func runSetup(c *cli.Context) error {
 
 	fmt.Printf("Found %d accounts.\n", len(accounts))
 
-	// 3. Encrypt and Save
 	fmt.Print("Enter a new master password to secure your data: ")
 	password, err := term.ReadPassword(int(os.Stdin.Fd()))
-	fmt.Println() // newline
+	fmt.Println()
 	if err != nil {
 		return err
 	}
@@ -153,10 +139,9 @@ func runSetup(c *cli.Context) error {
 }
 
 func runListCodes() error {
-	// 1. Load and Decrypt
 	fmt.Print("Enter master password: ")
 	password, err := term.ReadPassword(int(os.Stdin.Fd()))
-	fmt.Println() // newline
+	fmt.Println()
 	if err != nil {
 		return err
 	}
@@ -166,7 +151,6 @@ func runListCodes() error {
 		return fmt.Errorf("access denied or file error: %w", err)
 	}
 
-	// 2. Generate and Print Table
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "CODE\tTTL\tNAME")
 	fmt.Fprintln(w, "----\t---\t----")
@@ -178,8 +162,6 @@ func runListCodes() error {
 			continue
 		}
 
-		// Calculate remaining TTL
-		// TOTP period is usually 30s
 		period := 30
 		remain := period - (int(time.Now().Unix()) % period)
 
@@ -189,8 +171,6 @@ func runListCodes() error {
 
 	return nil
 }
-
-// --- Helpers: Image Processing ---
 
 func decodeQRCode(path string) (string, error) {
 	file, err := os.Open(path)
@@ -218,8 +198,6 @@ func decodeQRCode(path string) (string, error) {
 	return result.GetText(), nil
 }
 
-// --- Helpers: Storage & Crypto ---
-
 func getStorePath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -234,19 +212,16 @@ func saveAccounts(accounts []Account, password []byte) error {
 		return err
 	}
 
-	// Generate random salt
 	salt := make([]byte, saltLen)
 	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
 		return err
 	}
 
-	// Derive key
 	key, err := scrypt.Key(password, salt, scryptN, scryptR, scryptP, keyLen)
 	if err != nil {
 		return err
 	}
 
-	// Encrypt using AES-GCM
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return err
@@ -263,11 +238,6 @@ func saveAccounts(accounts []Account, password []byte) error {
 	}
 
 	ciphertext := gcm.Seal(nonce, nonce, data, nil)
-
-	// File structure: Salt + Ciphertext (Nonce is part of ciphertext/seal usually prefix,
-	// but here Seal prepends it if we pass nonce as dst? No, we appended manualy above).
-	// wait, gcm.Seal(dst, nonce, plaintext, data) appends the result to dst.
-	// So ciphertext variable above = Nonce + EncryptedData.
 
 	finalData := append(salt, ciphertext...)
 
@@ -297,7 +267,6 @@ func loadAccounts(password []byte) ([]Account, error) {
 	salt := fileData[:saltLen]
 	ciphertextWithNonce := fileData[saltLen:]
 
-	// Derive key
 	key, err := scrypt.Key(password, salt, scryptN, scryptR, scryptP, keyLen)
 	if err != nil {
 		return nil, err
